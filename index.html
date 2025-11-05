@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Site com Admin e JSON</title>
+  <style>
+    :root {
+      --b: #0b6efd;
+      --bg: #f8f9fa;
+      --ok: #198754;
+      --warn: #dc3545;
+      --muted: #6c757d;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; background: var(--bg); color: #222; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.2rem; margin: 0 0 0.75rem; }
+    .area { background: #fff; border: 1px solid #e4e7ea; padding: 16px; margin-bottom: 20px; border-radius: 10px; }
+    #admin-panel { display: none; background-color: #f0fff4; border-color: #d1f7dc; }
+    #login-form { border: 2px solid #0b6efd20; background-color: #eaf2ff; }
+    button { padding: 8px 14px; cursor: pointer; margin-top: 8px; border-radius: 8px; border: 1px solid #d0d7de; background: #fff; }
+    button.primary { background: var(--b); color: #fff; border-color: var(--b); }
+    button.danger { background: #ffe3e3; color: #b00020; border-color: #ffc2c2; }
+    input[type="text"], input[type="password"] {
+      padding: 10px; margin: 6px 0; width: 100%; display: block; border-radius: 8px; border: 1px solid #d0d7de;
+    }
+    ul { padding-left: 18px; }
+    .recado-item { border-bottom: 1px dashed #eee; padding: 6px 0; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .recado-text { flex: 1; word-break: break-word; }
+    .actions { display: flex; gap: 8px; }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    .msg { margin-top: 8px; font-size: 0.95rem; }
+    .msg.ok { color: var(--ok); }
+    .msg.err { color: var(--warn); }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+    @media (max-width: 560px){
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>🌐 Site com Administração e JSON</h1>
+  <p class="muted">Área pública lê do JSON via backend; Área Admin (login) permite CRUD.</p>
+
+  <div id="public-area" class="area" aria-live="polite">
+    <h2>Área Pública (conteúdo do JSON)</h2>
+    <ul id="public-recados-list">
+      <li class="muted">Carregando recados...</li>
+    </ul>
+    <button class="primary" onclick="loadRecados()">Atualizar</button>
+    <div id="public-message" class="msg"></div>
+  </div>
+
+  <div id="login-form" class="area" aria-live="polite">
+    <h2>🔑 Login do Administrador</h2>
+    <input type="text" id="username" placeholder="Usuário: user" autocomplete="username"/>
+    <input type="password" id="password" placeholder="Senha: 123456789" autocomplete="current-password"/>
+    <button class="primary" onclick="doLogin()">Entrar</button>
+    <div id="login-message" class="msg err"></div>
+  </div>
+
+  <div id="admin-panel" class="area" aria-live="polite">
+    <h2>🛠️ Painel de Gestão (CRUD)</h2>
+
+    <h3>Adicionar Novo Recado</h3>
+    <div class="row">
+      <input type="text" id="new-recado-text" placeholder="Digite o novo recado..."/>
+      <button class="primary" onclick="addRecado()">Adicionar</button>
+    </div>
+
+    <hr>
+
+    <h3>Recados Atuais (Admin)</h3>
+    <div id="admin-recados-list">
+      <p class="muted">Carregando recados para edição...</p>
+    </div>
+
+    <hr>
+    <button class="danger" onclick="doLogout()">Sair</button>
+    <div id="admin-message" class="msg"></div>
+  </div>
+
+  <script>
+    // ================== CONFIGURAÇÃO DA API ==================
+    // Se backend e frontend estiverem JUNTOS no mesmo serviço: deixe vazio ('').
+    // Se o HTML estiver em outro domínio (GitHub Pages/Netlify) e a API no Render:
+    // const BASE_URL = 'https://SEU-APP.onrender.com';
+    const BASE_URL = '';
+
+    // ================== ESTADO ==================
+    let isLoggedIn = false;
+
+    // ================== UTIL ==================
+    // Evita injeção de HTML quando o texto vem do usuário
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
+    }
+
+    function setMsg(elId, text, kind){
+      const el = document.getElementById(elId);
+      if(!el) return;
+      el.className = 'msg ' + (kind || '');
+      el.textContent = text || '';
+    }
+
+    // ================== CARREGAR E RENDERIZAR ==================
+    async function loadRecados() {
+      setMsg('public-message', 'Carregando...', 'muted');
+      try {
+        const response = await fetch(`${BASE_URL}/api/recados`);
+        if (!response.ok) throw new Error('Falha ao buscar recados');
+        const recados = await response.json();
+
+        // Pública
+        const publicList = document.getElementById('public-recados-list');
+        if (!recados.length) {
+          publicList.innerHTML = '<li class="muted">Nenhum recado ainda.</li>';
+        } else {
+          publicList.innerHTML = recados
+            .map(r => `<li>${escapeHtml(r.texto)}</li>`)
+            .join('');
+        }
+
+        // Admin (se logado)
+        if (isLoggedIn) {
+          renderAdminList(recados);
+        }
+        setMsg('public-message', 'Atualizado.', 'ok');
+      } catch (error) {
+        document.getElementById('public-recados-list').innerHTML =
+          '<li class="muted">ERRO: Servidor Backend não está respondendo.</li>';
+        setMsg('public-message', 'Tente novamente mais tarde.', 'err');
+      }
+    }
+
+    function renderAdminList(recados) {
+      const adminList = document.getElementById('admin-recados-list');
+      if (!recados.length) {
+        adminList.innerHTML = '<p class="muted">Nenhum recado para editar.</p>';
+        return;
+      }
+      adminList.innerHTML = recados.map(r => `
+        <div class="recado-item" data-id="${r.id}">
+          <span id="text-${r.id}" class="recado-text">${escapeHtml(r.texto)}</span>
+          <div class="actions">
+            <button onclick="editRecado(${r.id})">Editar</button>
+            <button class="danger" onclick="deleteRecado(${r.id})">Remover</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ================== ADMIN: CRUD ==================
+    async function addRecado() {
+      if (!isLoggedIn) return alert('Faça login primeiro.');
+      const input = document.getElementById('new-recado-text');
+      const texto = input.value.trim();
+      if (!texto) return alert('Digite um texto.');
+
+      setMsg('admin-message', 'Salvando...', 'muted');
+      try {
+        const response = await fetch(`${BASE_URL}/api/recados`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto })
+        });
+        if (!response.ok) {
+          const e = await response.json().catch(() => ({}));
+          throw new Error(e.error || 'Falha ao adicionar');
+        }
+        input.value = '';
+        await loadRecados();
+        setMsg('admin-message', 'Recado adicionado.', 'ok');
+      } catch (error) {
+        setMsg('admin-message', error.message || 'Erro de conexão (POST).', 'err');
+      }
+    }
+
+    async function editRecado(id) {
+      if (!isLoggedIn) return alert('Faça login primeiro.');
+      const el = document.getElementById(`text-${id}`);
+      const atual = el?.textContent || '';
+      const novo = prompt('Edite o texto do recado:', atual);
+      if (novo === null) return;
+
+      setMsg('admin-message', 'Atualizando...', 'muted');
+      try {
+        const resp = await fetch(`${BASE_URL}/api/recados/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto: novo })
+        });
+        if (!resp.ok) {
+          const msg = await resp.json().catch(() => ({}));
+          throw new Error(msg.error || resp.statusText || 'Falha ao editar');
+        }
+        await loadRecados();
+        setMsg('admin-message', 'Recado atualizado.', 'ok');
+      } catch (e) {
+        setMsg('admin-message', e.message || 'Erro de conexão (PUT).', 'err');
+      }
+    }
+
+    async function deleteRecado(id) {
+      if (!isLoggedIn) return alert('Faça login primeiro.');
+      if (!confirm('Confirmar remoção?')) return;
+
+      setMsg('admin-message', 'Removendo...', 'muted');
+      try {
+        const response = await fetch(`${BASE_URL}/api/recados/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+          const e = await response.json().catch(() => ({}));
+          throw new Error(e.error || 'Falha ao remover');
+        }
+        await loadRecados();
+        setMsg('admin-message', 'Recado removido.', 'ok');
+      } catch (error) {
+        setMsg('admin-message', error.message || 'Erro de conexão (DELETE).', 'err');
+      }
+    }
+
+    // ================== AUTENTICAÇÃO ==================
+    async function doLogin() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      setMsg('login-message', '');
+
+      try {
+        const response = await fetch(`${BASE_URL}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok && data.success) {
+          isLoggedIn = true;
+          document.getElementById('login-form').style.display = 'none';
+          document.getElementById('admin-panel').style.display = 'block';
+          setMsg('admin-message', 'Login ok. Você pode gerenciar os recados.', 'ok');
+          loadRecados();
+        } else {
+          setMsg('login-message', 'Credenciais incorretas.', 'err');
+        }
+      } catch (error) {
+        setMsg('login-message', 'Erro de conexão (Login).', 'err');
+      }
+    }
+
+    function doLogout() {
+      isLoggedIn = false;
+      document.getElementById('login-form').style.display = 'block';
+      document.getElementById('admin-panel').style.display = 'none';
+      setMsg('login-message', 'Você saiu.', 'muted');
+      setMsg('admin-message', '');
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+    }
+
+    // ================== BOOT ==================
+    window.onload = loadRecados;
+  </script>
+</body>
+</html>
