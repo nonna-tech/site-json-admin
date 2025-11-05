@@ -1,0 +1,6 @@
+{
+  "recados": [
+    { "id": 1, "texto": "Bem-vindos ao projeto! Este é o primeiro item editável." },
+    { "id": 2, "texto": "O sucesso do projeto depende da manipulação correta deste arquivo pelo backend." }
+  ]
+}
