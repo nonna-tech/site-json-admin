@@ -11,9 +11,8 @@ const PORT = process.env.PORT || 10000;
 app.use(express.json());
 
 // 🔓 Libera acesso do GitHub Pages (CORS)
-app.use(cors({
-  origin: ['https://nonna-tech.github.io'], // domínio do seu Pages
-}));
+app.use(cors()); // libera todos os domínios (temporário para teste)
+
 
 // ========================= CAMINHO DO ARQUIVO JSON =========================
 const dataFile = path.join(__dirname, 'data.json');
@@ -103,3 +102,4 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+
