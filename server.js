@@ -1,86 +1,105 @@
+// ========================= CONFIGURAÇÃO BÁSICA =========================
 const express = require('express');
-const fs = require('fs/promises');
+const cors = require('cors');
+const fs = require('fs').promises;
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
+const PORT = process.env.PORT || 10000;
 
+// ========================= MIDDLEWARES =========================
 app.use(express.json());
-app.use(express.static(__dirname)); // serve o index.html e afins
 
+// 🔓 Libera acesso do GitHub Pages (CORS)
+app.use(cors({
+  origin: ['https://nonna-tech.github.io'], // domínio do seu Pages
+}));
+
+// ========================= CAMINHO DO ARQUIVO JSON =========================
+const dataFile = path.join(__dirname, 'data.json');
+
+// ========================= FUNÇÕES AUXILIARES =========================
 async function readData() {
   try {
-    const raw = await fs.readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const content = await fs.readFile(dataFile, 'utf-8');
+    return JSON.parse(content);
   } catch (err) {
-    if (err.code === 'ENOENT') {
-      const initial = { recados: [] };
-      await fs.writeFile(DATA_FILE, JSON.stringify(initial, null, 2));
-      return initial;
-    }
-    throw err;
+    return { recados: [] };
   }
 }
 
 async function writeData(data) {
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2));
+  await fs.writeFile(dataFile, JSON.stringify(data, null, 2));
 }
 
-// Login didático (NÃO usar em produção)
-const VALID_USER = 'user';
-const VALID_PASS = '123456789';
-app.post('/login', (req, res) => {
-  const { username, password } = req.body || {};
-  const ok = username === VALID_USER && password === VALID_PASS;
-  if (ok) return res.json({ success: true });
-  res.status(401).json({ success: false, message: 'Credenciais inválidas' });
-});
-
-// API
+// ========================= ROTAS PÚBLICAS =========================
 app.get('/api/recados', async (req, res) => {
-  try { res.json((await readData()).recados); }
-  catch { res.status(500).json({ error: 'Falha ao ler' }); }
+  const data = await readData();
+  res.json(data.recados);
 });
 
+// ========================= ROTAS ADMIN (CRUD) =========================
 app.post('/api/recados', async (req, res) => {
-  try {
-    const { texto } = req.body || {};
-    if (!texto?.trim()) return res.status(400).json({ error: 'Texto é obrigatório' });
-    const data = await readData();
-    const nextId = data.recados.length ? Math.max(...data.recados.map(r => r.id)) + 1 : 1;
-    const novo = { id: nextId, texto: texto.trim() };
-    data.recados.push(novo);
-    await writeData(data);
-    res.status(201).json(novo);
-  } catch { res.status(500).json({ error: 'Falha ao salvar' }); }
+  const { texto } = req.body || {};
+  if (!texto || texto.trim() === '') {
+    return res.status(400).json({ error: 'Texto é obrigatório.' });
+  }
+
+  const data = await readData();
+  const novo = {
+    id: Date.now(),
+    texto: texto.trim()
+  };
+  data.recados.push(novo);
+  await writeData(data);
+  res.status(201).json(novo);
 });
 
 app.put('/api/recados/:id', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { texto } = req.body || {};
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID inválido' });
-    if (!texto?.trim()) return res.status(400).json({ error: 'Texto é obrigatório' });
-    const data = await readData();
-    const idx = data.recados.findIndex(r => r.id === id);
-    if (idx === -1) return res.status(404).json({ error: 'Não encontrado' });
-    data.recados[idx].texto = texto.trim();
-    await writeData(data);
-    res.json(data.recados[idx]);
-  } catch { res.status(500).json({ error: 'Falha ao atualizar' }); }
+  const id = Number(req.params.id);
+  const { texto } = req.body || {};
+  const data = await readData();
+  const idx = data.recados.findIndex(r => r.id === id);
+
+  if (idx === -1)
+    return res.status(404).json({ error: 'Não encontrado' });
+
+  data.recados[idx].texto = texto.trim();
+  await writeData(data);
+  res.json(data.recados[idx]);
 });
 
 app.delete('/api/recados/:id', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const data = await readData();
-    const before = data.recados.length;
-    data.recados = data.recados.filter(r => r.id !== id);
-    if (data.recados.length === before) return res.status(404).json({ error: 'Não encontrado' });
-    await writeData(data);
-    res.status(204).send();
-  } catch { res.status(500).json({ error: 'Falha ao remover' }); }
+  const id = Number(req.params.id);
+  const data = await readData();
+  const idx = data.recados.findIndex(r => r.id === id);
+
+  if (idx === -1)
+    return res.status(404).json({ error: 'Não encontrado' });
+
+  data.recados.splice(idx, 1);
+  await writeData(data);
+  res.json({ success: true });
 });
 
-app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
+// ========================= LOGIN SIMPLES =========================
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === 'user' && password === '123456789') {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: 'Credenciais incorretas.' });
+  }
+});
+
+// ========================= FRONTEND (HTML) =========================
+app.use(express.static(__dirname));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// ========================= INICIAR SERVIDOR =========================
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
